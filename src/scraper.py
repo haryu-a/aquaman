@@ -1,14 +1,10 @@
-""" 競艇投資ツール """
+""" 過去データの収集(スクレイピング) """
 import pathlib
 import random
 import requests
 from bs4 import BeautifulSoup
 from itertools import permutations
-import pandas as pd
-import pathlib as pl
 
-
-# 過去データの収集(スクレイピング)
 
 class Scraper:
     file_format = "D:/DATA/aqua_man/raw/official/html/{}/{}/{}R_race_card.html"
