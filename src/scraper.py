@@ -12,9 +12,9 @@ class Scraper:
     data = None
 
     def __init__(self, date, place, race=None):
-        self.date = int(date)
-        self.place = int(place)
-        self.race = int(race) if race else None
+        self.date = date
+        self.place = place
+        self.race = race
         html_text = self.get_html()
         if html_text:
             self.data = self.get_data(html_text)
@@ -326,4 +326,5 @@ def get_all_race_index(date):
 
 
 if __name__ == "__main__":
-    get_all_race_index("20251101")
+    print(ScraperRaceCard(20251101, 1, 1).data)
+    #get_all_race_index("20251101")
