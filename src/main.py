@@ -84,3 +84,21 @@ for race_id, group in test_df.groupby("race_id"):
     index_total += index
 
 print(index_total)
+
+# 1. 特徴量重要度の取得（gain: 精度向上への貢献度）
+importance_gain = model.booster_.feature_importance(importance_type='gain')
+importance_split = model.booster_.feature_importance(importance_type='split')
+
+# 2. DataFrame にまとめる
+feature_imp = pd.DataFrame({
+    'feature': features,
+    'importance_gain (貢献度)': importance_gain,
+    'importance_split (分割回数)': importance_split
+}).sort_values('importance_gain (貢献度)', ascending=False).reset_index(drop=True)
+
+# 3. 画面に表示
+print("\n" + "="*50)
+print("       【特徴量重要度 (Feature Importance)】")
+print("="*50)
+print(feature_imp.to_string(index=False))
+print("="*50)
