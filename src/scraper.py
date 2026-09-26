@@ -4,6 +4,7 @@ import random
 import requests
 from bs4 import BeautifulSoup
 from itertools import permutations
+import pandas as pd
 
 
 class Scraper:
@@ -325,6 +326,33 @@ def get_all_race_index(date):
     print(all_race_index)
 
 
+def save_parquet():
+    all_df = pd.DataFrame()
+    races = [[20251101, 1, i] for i in range(1, 11)]
+    for race in races:
+        # データ取得
+        race_card_data = ScraperRaceCard(*race).data
+        result_data = ScraperResult(*race).data
+        # データ成形
+        data = {
+            "race_id": "{}{:02}{:02}".format(*race),
+            "frame": list(range(1, 7)),
+            "avg_st": [float(i) for i in race_card_data["avg_st"]],
+            "win_rates": [float(i) for i in race_card_data["win_rates"]],
+            "rank": [int(i) for i in result_data["frame"]]
+        }
+        # データフレーム化
+        df = pd.DataFrame(data)
+        #ランキング学習では「数字が大きいほど優秀」と判断されるため、実際の着順（1〜6着）を反転させたスコアを割り当て
+        df['relevance'] = 6 - df['rank']  # 1着=5点 〜 6着=0点
+        # rank行削除
+        #df = df.drop(columns=["rank"])
+        # データ統合
+        all_df = pd.concat([all_df, df], ignore_index=True)
+    all_df.to_csv("sample/sample.csv")
+
+
 if __name__ == "__main__":
-    print(ScraperRaceCard(20251101, 1, 1).data)
+    #print(ScraperRaceCard(20251101, 1, 1).data)
     #get_all_race_index("20251101")
+    save_parquet()
