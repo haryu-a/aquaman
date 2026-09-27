@@ -1,7 +1,7 @@
 import pandas as pd
 from sklearn.model_selection import GroupShuffleSplit
 import lightgbm as lgb
-import optuna
+import optuna as opt 
 import numpy as np
 from itertools import permutations
 
@@ -32,9 +32,8 @@ def create_study_model(X_train, y_train, X_test, y_test, group_train, group_test
         objective='lambdarank',
         metric='ndcg',            # ランキング学習の評価指標
         ndcg_eval_at=[1, 2, 3],    # 上位1〜3着の精度を重視
-        n_estimators=100,
-        learning_rate=0.05,
-        random_state=42
+        random_state=42,
+        verbose=-1
     )
 
     # group パラメータを渡して学習
