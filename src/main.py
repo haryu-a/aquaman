@@ -112,6 +112,58 @@ def search_best_features(features:list, study_data):
     return best_features
 
 
+class StudyModel:
+    train_df:pd.DataFrame
+    test_df:pd.DataFrame
+    X_train:pd.DataFrame
+    y_train:list
+    X_test:pd.DataFrame
+    y_test:list
+    group_train:list
+    group_test:list
+
+
+def objective(trial:opt.Trial):
+    """ Optunaの目的関数 (objective) の定義 """
+    sm = StudyModel
+
+    # パラメータの探索範囲を設定
+    params = {
+        'objective': 'lambdarank',
+        'metric': 'ndcg',
+        'ndcg_eval_at': [1, 2, 3],
+        'random_state': 42,
+        'verbose': -1,  # 学習中のログ出力を抑制
+        
+        # チューニング対象パラメータ
+        'n_estimators': trial.suggest_int('n_estimators', 50, 300),
+        'learning_rate': trial.suggest_float('learning_rate', 0.01, 0.1, log=True),
+        'num_leaves': trial.suggest_int('num_leaves', 15, 127),
+        'max_depth': trial.suggest_int('max_depth', 3, 10),
+        'min_child_samples': trial.suggest_int('min_child_samples', 10, 100),
+        'subsample': trial.suggest_float('subsample', 0.6, 1.0),
+        'colsample_bytree': trial.suggest_float('colsample_bytree', 0.6, 1.0),
+        'reg_alpha': trial.suggest_float('reg_alpha', 1e-8, 10.0, log=True),
+        'reg_lambda': trial.suggest_float('reg_lambda', 1e-8, 10.0, log=True),
+    }
+    
+    # モデルの定義と学習
+    model = lgb.LGBMRanker(**params)
+    
+    model.fit(
+        sm.X_train, sm.y_train,
+        group=sm.group_train,
+        eval_set=[(sm.X_test, sm.y_test)],
+        eval_group=[sm.group_test],
+        callbacks=[lgb.early_stopping(stopping_rounds=15, verbose=False)]
+    )
+    
+    # 検証データでの評価スコア（ベストなNDCG@3スコア）を目的関数として返す
+    # best_score_ から eval_set(0) の ndcg@3 を取得
+    best_score = model.best_score_['valid_0']['ndcg@3']
+    
+    return best_score
+
 def main():
     """ メイン """
     # データの取得
@@ -126,5 +178,19 @@ def main():
 
     # 最適な特徴量を探索
     best_features = search_best_features(features, study_data)
+
+    # モデルの最適なパラメーターを探索
+    sm = StudyModel
+    sm.train_df, sm.test_df, sm.X_train, sm.y_train, sm.X_test, sm.y_test, sm.group_train, sm.group_test = study_data
+    # NDCGスコアは高いほど良いので direction='maximize' を指定
+    study = opt.create_study(direction='maximize')
+    # 50回の試行（トライアル）を実行
+    study.optimize(objective, n_trials=50)
+    print("=== 最適化結果 ===")
+    print(f"ベスト NDCG@3 スコア: {study.best_value:.4f}")
+    print("ベストパラメータ:")
+    for key, value in study.best_params.items():
+        print(f"  {key}: {value}")
+
 
 main()
