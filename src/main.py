@@ -4,6 +4,17 @@ import lightgbm as lgb
 import optuna as opt 
 import numpy as np
 from itertools import permutations
+import pathlib
+import os
+import json
+
+
+def write_json(path, data, encoding='utf-8'):
+    """ データをJSONファイルに書き込む """
+    if not os.path.exists(os.path.dirname(path)):
+        os.makedirs(os.path.dirname(path))
+    with open(path, 'w', encoding=encoding, newline='') as f:
+        json.dump(data, f, ensure_ascii=False, indent=4)
 
 
 class SearchBestModel:
@@ -176,16 +187,16 @@ class SearchBestModel:
         study.optimize(self.objective, n_trials=100)
 
         # ベストパラメーター
-        best_params = study.best_params
-        best_params.update({
+        best_params = {
             'objective': 'lambdarank',
             'metric': 'ndcg',
             'ndcg_eval_at': [1, 2, 3],
             'random_state': 42,
             'verbose': -1
-        })
+        }
+        best_params.update(study.best_params)
         print(f"ベスト NDCG@3 スコア: {study.best_value:.4f}")
-        print("ベストパラメータ:")
+        print("最適なパラメータ:")
         for key, value in study.best_params.items():
             print(f"  {key}: {value}")
 
@@ -194,12 +205,13 @@ class SearchBestModel:
         
 
 
-def main():
+def main(n_traials=1):
     """ メイン """
     sbm = SearchBestModel()
 
     # データの取得
-    all_df = pd.read_csv("sample/sample.csv")
+    data_path = "sample/sample.csv"
+    all_df = pd.read_csv(data_path)
 
     # 訓練する特徴量を指定
     features = ["frame", "avg_st", "win_rates"]
@@ -214,7 +226,7 @@ def main():
     best_features = sbm.features.copy()
     best_params = sbm.params.copy()
     best_index_total = sbm.index_total
-    for _ in range(10):
+    for _ in range(n_traials):
         # モデルの最適なパラメーターを探索
         sbm.search_best_params()
         # 再度最適な特徴量を探索(学習データや特徴量の更新は行わない)
@@ -225,9 +237,31 @@ def main():
             best_features = sbm.features
             best_index_total = sbm.index_total
 
-    print(best_index_total, best_features)
+    # 最適なモデル構築に必要な情報を出力
+    data = {
+        "data_path": "sample/sample.csv",
+        "features": best_features,
+        "params": best_params
+    }
+    exp_path = pathlib.Path(__file__).parent / "best_model.json"
+    if not os.path.exists(os.path.dirname(exp_path)):
+        os.makedirs(os.path.dirname(exp_path))
+    with open(exp_path, 'w', encoding="utf-8", newline='') as f:
+        json.dump(data, f, ensure_ascii=False, indent=4)
+
+    # print出力
+    print("="*50)
+    print("-- 最終結果 --")
+    print(f"合計インデックス: {best_index_total} | 試行回数: {n_traials}回")
+    print("")
+    print(f"最適な特徴量リスト: {best_features}")
+    print("最適なパラメータ:")
     for key, value in best_params.items():
         print(f"  {key}: {value}")
+    print("")
+    print(f"最適情報出力パス: {exp_path}")
+    print("="*50)
 
 
-main()
+if __name__ == "__main__":
+    main(n_traials=1) # n_traials: 試行回数
