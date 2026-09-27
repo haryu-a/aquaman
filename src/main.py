@@ -79,44 +79,53 @@ def get_hit_index_total(df:pd.DataFrame):
     return index_total
 
 
+def search_best_features(features:list, study_data):
+    """ 最適な特徴量を探索 """
+    current_features = features.copy()
+    best_features = []
+    best_index_total = None
+    removed_feature = ""
+    # 特徴量が1つになるまで貢献度が低いものを削る
+    while len(current_features) > 0:
+        # 学習モデル作成
+        tmp_study_data = list(study_data).copy()
+        tmp_study_data[2] = study_data[2][current_features] # X_train
+        tmp_study_data[4] = study_data[4][current_features] # X_test
+        model = create_study_model(*tmp_study_data[2:8])
+
+        # テストデータでの精度評価
+        test_df = study_data[1]
+        test_df["forecast"] = model.predict(test_df[current_features])
+        # 120通りの予測から的中したインデックスの合計を取得
+        index_total = get_hit_index_total(test_df)
+        if best_index_total is None:
+            best_index_total = index_total
+        # 合計インデックスが最適解よりもいいものであれば、特徴量と合計インデックスを更新
+        if index_total <= best_index_total:
+            best_features = current_features.copy()
+            best_index_total = index_total
+        print(f"現在の合計インデックス: {index_total} | 削除された特徴量: {removed_feature}")
+        # Gain（貢献度）が最も低い特徴量を特定して削除
+        importances = model.booster_.feature_importance(importance_type='gain')
+        min_imp_idx = np.argmin(importances)
+        removed_feature = current_features.pop(min_imp_idx)
+    print(f"最適な特徴量リスト: {best_features} | 合計インデックス: {best_index_total}")
+    return best_features
+
+
 def main():
     """ メイン """
     # データの取得
     all_df = pd.read_csv("sample/sample.csv")
 
-    # 訓練する特徴を指定
+    # 訓練する特徴量を指定
     features = ["frame", "avg_st", "win_rates"]
 
     # 学習データを用意(訓練：検証が8:2の割合でランダムに分割)
     # study_data == train_df, test_df, X_train, y_train, X_test, y_test, group_train, group_test
     study_data = create_study_data(all_df, features, test_size=0.2)
 
-    # 学習モデル作成
-    model = create_study_model(*study_data[2:8])
-
-    # テストデータでの精度評価
-    test_df = study_data[1]
-    test_df["forecast"] = model.predict(test_df[features])
-    # 120通りの予測から的中したインデックスの合計を取得
-    index_total = get_hit_index_total(test_df)
-    print(index_total)
-
-    # 1. 特徴量重要度の取得（gain: 精度向上への貢献度）
-    importance_gain = model.booster_.feature_importance(importance_type='gain')
-    importance_split = model.booster_.feature_importance(importance_type='split')
-
-    # 2. DataFrame にまとめる
-    feature_imp = pd.DataFrame({
-        'feature': features,
-        'importance_gain (貢献度)': importance_gain,
-        'importance_split (分割回数)': importance_split
-    }).sort_values('importance_gain (貢献度)', ascending=False).reset_index(drop=True)
-
-    # 3. 画面に表示
-    print("\n" + "="*50)
-    print("       【特徴量重要度 (Feature Importance)】")
-    print("="*50)
-    print(feature_imp.to_string(index=False))
-    print("="*50)
+    # 最適な特徴量を探索
+    best_features = search_best_features(features, study_data)
 
 main()
