@@ -201,7 +201,7 @@ def main(n_traials=1):
     sbm = SearchBestModel()
 
     # データの取得
-    data_path = "sample/sample.csv"
+    data_path = pathlib.Path(__file__).parent.parent / "sample" / "sample.csv"
     all_df = pd.read_csv(data_path)
 
     # 訓練する特徴量を指定
@@ -230,11 +230,11 @@ def main(n_traials=1):
 
     # 最適なモデル構築に必要な情報を出力
     data = {
-        "data_path": "sample/sample.csv",
+        "data_path": str(data_path),
         "features": best_features,
         "params": best_params
     }
-    exp_path = pathlib.Path(__file__).parent / "best_model.json"
+    exp_path = pathlib.Path(__file__).parent.parent / "sample" / "best_model.json"
     if not os.path.exists(os.path.dirname(exp_path)):
         os.makedirs(os.path.dirname(exp_path))
     with open(exp_path, 'w', encoding="utf-8", newline='') as f:
