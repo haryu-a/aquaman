@@ -9,14 +9,6 @@ import os
 import json
 
 
-def write_json(path, data, encoding='utf-8'):
-    """ データをJSONファイルに書き込む """
-    if not os.path.exists(os.path.dirname(path)):
-        os.makedirs(os.path.dirname(path))
-    with open(path, 'w', encoding=encoding, newline='') as f:
-        json.dump(data, f, ensure_ascii=False, indent=4)
-
-
 class SearchBestModel:
     train_df: pd.DataFrame
     test_df: pd.DataFrame
@@ -202,7 +194,6 @@ class SearchBestModel:
 
         # 最適な学習データに更新
         self.params = best_params
-        
 
 
 def main(n_traials=1):
