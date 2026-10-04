@@ -9,7 +9,7 @@ import os
 import json
 
 
-class SearchBestModel:
+class CreateBestModel:
     train_df: pd.DataFrame
     test_df: pd.DataFrame
     X_train: pd.DataFrame
@@ -22,26 +22,11 @@ class SearchBestModel:
     params: dict
     index_total: int
 
-    def set_study_data(self, df:pd.DataFrame, features, test_size=0.2):
-        """ 学習用データを用意 """
-        # 訓練データと検証データをランダムに分割（test_size=0.2の場合、グループ数の2割を検証用に指定）
-        gss = GroupShuffleSplit(n_splits=1, test_size=test_size, random_state=42)
-        train_idx, test_idx = next(gss.split(df, groups=df['race_id']))
-        self.train_df:pd.DataFrame = df.iloc[train_idx]
-        self.test_df:pd.DataFrame = df.iloc[test_idx]
-
-        # 特徴量(X) と 正解ラベル(y)
-        self.X_train, self.y_train = self.train_df[features], self.train_df["relevance"]
-        self.X_test, self.y_test = self.test_df[features], self.test_df["relevance"]
-
-        # グループ情報の作成（各レースに含まれる艇数の配列）
-        self.group_train = self.train_df.groupby("race_id").size().values
-        self.group_test = self.test_df.groupby("race_id").size().values
-
-        # 特徴量
-        self.features = features
-
-        # モデルパラメーター
+    def __init__(self):
+        """ 初期化 """
+        # 学習に使用する特徴量のリストを定義
+        self.features = ["frame", "avg_st", "win_rates"]
+        # LightGBMのパラメータを設定
         self.params = {
             'objective': 'lambdarank',
             'metric': 'ndcg',
@@ -49,6 +34,24 @@ class SearchBestModel:
             'random_state': 42,
             'verbose': -1
         }
+        # GroupShuffleSplitを使用して、グループ単位でデータを分割するためのインスタンスを作成
+        # test_size=0.2の場合、グループ数の2割を検証用に指定
+        self.gss = GroupShuffleSplit(n_splits=1, test_size=0.2, random_state=42)
+
+    def set_study_data(self, df:pd.DataFrame):
+        """ 学習用データを用意 """
+        # 訓練データと検証データをランダムに分割
+        train_idx, test_idx = next(self.gss.split(df, groups=df['race_id']))
+        self.train_df:pd.DataFrame = df.iloc[train_idx]
+        self.test_df:pd.DataFrame = df.iloc[test_idx]
+
+        # 特徴量(X) と 正解ラベル(y)
+        self.X_train, self.y_train = self.train_df[self.features], self.train_df["relevance"]
+        self.X_test, self.y_test = self.test_df[self.features], self.test_df["relevance"]
+
+        # グループ情報の作成（各レースに含まれる艇数の配列）
+        self.group_train = self.train_df.groupby("race_id").size().values
+        self.group_test = self.test_df.groupby("race_id").size().values
 
     def create_study_model(self):
         """ 学習モデルを作成 """
@@ -65,10 +68,10 @@ class SearchBestModel:
         )
         return model
 
-    def get_hit_index_total(self, df:pd.DataFrame):
+    def get_hit_index_total(self):
         """ 120通りの予測から的中したインデックスの合計を取得 """
         index_total = 0
-        for _, group in df.groupby("race_id"):
+        for _, group in self.test_df.groupby("race_id"):
             # Softmax関数。それぞれが0-1の間の数値となり、合計が1となるよう調整
             scores = group["forecast"].values
             exp_s = np.exp(scores - np.max(scores))
@@ -117,7 +120,7 @@ class SearchBestModel:
             # テストデータでの精度評価
             self.test_df["forecast"] = model.predict(self.test_df[current_features])
             # 120通りの予測から的中したインデックスの合計を取得
-            index_total = self.get_hit_index_total(self.test_df)
+            index_total = self.get_hit_index_total()
             if best_index_total is None:
                 best_index_total = index_total
             # 合計インデックスが最適解よりもいいものであれば、特徴量と合計インデックスを更新
@@ -195,64 +198,78 @@ class SearchBestModel:
         # 最適な学習データに更新
         self.params = best_params
 
+    def search_best_model(self, df, export_path, n_trials=1):
+        """ 最適なモデル構築に必要な情報を探索 """
+        # 学習データを用意
+        self.set_study_data(df)
 
-def main(n_traials=1):
-    """ メイン """
-    sbm = SearchBestModel()
+        # 最適な特徴量を探索(明らかに不要な特徴量を除外)
+        self.search_best_features()
 
+        # モデルの最適なパラメーターと最適な特徴量を繰り返し探索
+        best_features = self.features.copy()
+        best_params = self.params.copy()
+        best_index_total = self.index_total
+        for _ in range(n_trials):
+            # モデルの最適なパラメーターを探索
+            self.search_best_params()
+            # 再度最適な特徴量を探索(学習データや特徴量の更新は行わない)
+            self.search_best_features(update=False)
+            # 合計インデックスが小さければ、最適値更新
+            if self.index_total <= best_index_total:
+                best_params = self.params
+                best_features = self.features
+                best_index_total = self.index_total
+
+        # 最適なモデル構築に必要な情報を出力
+        data = {
+            "features": best_features,
+            "params": best_params
+        }
+        if not os.path.exists(os.path.dirname(export_path)):
+            os.makedirs(os.path.dirname(export_path))
+        with open(export_path, 'w', encoding="utf-8", newline='') as f:
+            json.dump(data, f, ensure_ascii=False, indent=4)
+
+        # print出力
+        print("="*50)
+        print("-- 最終結果 --")
+        print(f"合計インデックス: {best_index_total} | 試行回数: {n_trials}回")
+        print("")
+        print(f"最適な特徴量リスト: {best_features}")
+        print("最適なパラメータ:")
+        for key, value in best_params.items():
+            print(f"  {key}: {value}")
+        print("")
+        print(f"最適情報出力パス: {export_path}")
+        print("="*50)
+
+    def create_best_model(self, df, import_path):
+        """ 最適なモデルを作成 """
+        # 学習データを用意
+        self.set_study_data(df)
+
+        # 最適なモデル構築に必要な情報を読み込み
+        with open(import_path, 'r', encoding="utf-8") as f:
+            data = json.load(f)
+
+        # 最適な特徴量とパラメータを設定
+        self.features = data["features"]
+        self.params = data["params"]
+
+        model = self.create_study_model()
+        return model
+
+if __name__ == "__main__":
     # データの取得
     data_path = pathlib.Path(__file__).parent.parent / "sample" / "sample.csv"
     all_df = pd.read_csv(data_path)
+    # モデル情報パス
+    model_path = pathlib.Path(__file__).parent.parent / "sample" / "best_model.json"
 
-    # 訓練する特徴量を指定
-    features = ["frame", "avg_st", "win_rates"]
+    create_best_model = CreateBestModel()
+    create_best_model.search_best_model(df=all_df, export_path=model_path, n_trials=1) # n_trials: 試行回数
 
-    # 学習データを用意(訓練：検証が8:2の割合でランダムに分割)
-    sbm.set_study_data(all_df, features, test_size=0.2)
-
-    # 最適な特徴量を探索(明らかに不要な特徴量を除外)
-    sbm.search_best_features()
-
-    # モデルの最適なパラメーターと最適な特徴量を繰り返し探索
-    best_features = sbm.features.copy()
-    best_params = sbm.params.copy()
-    best_index_total = sbm.index_total
-    for _ in range(n_traials):
-        # モデルの最適なパラメーターを探索
-        sbm.search_best_params()
-        # 再度最適な特徴量を探索(学習データや特徴量の更新は行わない)
-        sbm.search_best_features(update=False)
-        # 合計インデックスが小さければ、最適値更新
-        if sbm.index_total <= best_index_total:
-            best_params = sbm.params
-            best_features = sbm.features
-            best_index_total = sbm.index_total
-
-    # 最適なモデル構築に必要な情報を出力
-    data = {
-        "data_path": str(data_path),
-        "features": best_features,
-        "params": best_params
-    }
-    exp_path = pathlib.Path(__file__).parent.parent / "sample" / "best_model.json"
-    if not os.path.exists(os.path.dirname(exp_path)):
-        os.makedirs(os.path.dirname(exp_path))
-    with open(exp_path, 'w', encoding="utf-8", newline='') as f:
-        json.dump(data, f, ensure_ascii=False, indent=4)
-
-    # print出力
-    print("="*50)
-    print("-- 最終結果 --")
-    print(f"合計インデックス: {best_index_total} | 試行回数: {n_traials}回")
-    print("")
-    print(f"最適な特徴量リスト: {best_features}")
-    print("最適なパラメータ:")
-    for key, value in best_params.items():
-        print(f"  {key}: {value}")
-    print("")
-    print(f"最適情報出力パス: {exp_path}")
-    print("="*50)
-
-
-if __name__ == "__main__":
-    main(n_traials=1) # n_traials: 試行回数
+    model = create_best_model.create_best_model(df=all_df, import_path=model_path)
+    print("最適なモデルを作成しました。")
+    print(model)
